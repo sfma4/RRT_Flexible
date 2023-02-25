@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 from configuration_space import FreeEuclideanSpace, FlexibleLocalPlanner, Plan
 from tqdm import tqdm
-import simulation_function as simu
+import simulation_function_2 as simu
+# import simulation_function_3 as simu_forward
+
 
 class RRTGraph(object):
 
@@ -38,12 +40,32 @@ class RRTGraph(object):
         while self.parent[cObj]:
             cObj = tuple(self.parent[cObj])
             cArray.append(cObj)
+            print('cobj in construction',cObj)
         cArray.reverse()
         path = None
-        for i in range(len(cArray) - 1):
-            path = Plan.chain_paths(path, self.path[(cArray[i], cArray[i + 1])])
+        # for i in range(len(cArray) - 1):
+        for i in range((len(cArray) - 1), 0, -1):
+            print(i)
+            # break
+            # print("path2",self.path[(cArray[i-1], cArray[i])])
+            path = Plan.chain_paths(path, self.path[(cArray[i-1], cArray[i])])
         # print('path at construct', path)
-        return path
+        cArray.reverse()
+        print('cArray', cArray)
+        p = np.array([[0, 0]])
+        for i in range(len(cArray) - 1):
+            path = np.arange(cArray[i][0], cArray[i + 1][0] + 0.1, 0.001)
+            num = len(path)
+            path = path.reshape(path.shape[0], 1)
+            path1 = np.linspace(cArray[i][1], cArray[i + 1][1], num)
+            path1 = path1.reshape(path.shape[0], 1)
+            b = np.concatenate((path, path1), axis=1)
+            p = np.concatenate((p, b))
+        # print(np.arange(0,1,0.1))
+        # print(np.array(p))
+        # print(np.delete(p, 0, 0))
+        p = np.delete(p, 0, 0)
+        return p
 
 
 class RRTPlanner(object):
@@ -62,27 +84,33 @@ class RRTPlanner(object):
     def path_exist(self, a, b):
         return True
 
-    def iterate_new_goal(self, goal, c):
-        for i in range(200):
-            # scale = np.random.rand(1, 4)[0]
+    def iterate_new_goal(self, goal):
+        ### this function is used for sample contacted states and pseudo goal which are not in contact
+        probability_of_sampling_goal = 0.4   ### for 30% of chance, X(p) will be sampled outside of C reigion
+        p = np.random.uniform(0, 1)
+        scale = np.random.rand(1, 4)[0]
+        # zoom_radius = min(Distance_goal)
+        if p < probability_of_sampling_goal:
+            radius = 1.0  #the radius of the sample range circle, assume that is step length
             circle_x = goal[0]
             circle_y = goal[1]
-            alpha = 3 * np.pi/8 * np.random.rand() + np.pi/4
-            # alpha = np.pi/4
-            r = np.sqrt(np.random.rand()) + 1   ### where is the c-region boundry and gripper radius
-            x = r * np.cos(alpha) + circle_x + np.random.rand()
-            y = r * np.sin(alpha) + circle_y
-            # x_new = [x, y, np.random.uniform(self.config_space.low_lims[2], self.config_space.high_lims[2]), np.random.uniform(self.config_space.low_lims[3], self.config_space.high_lims[3])]
+            alpha = 2 * np.pi * np.random.rand() # ramdom angle
+            r = radius * np.sqrt(np.random.rand())  # random radius
+            # x = r * np.cos(alpha) + circle_x
+            # y = r * np.sin(alpha) + circle_y
+            x = r * np.cos(alpha) + 5
+            y = r * np.sin(alpha) + 6
 
-            x_new = [x, y, 0.0, np.random.uniform(self.config_space.low_lims[3], self.config_space.high_lims[3])]
-
-            # x_new = [6.020781662675009, 6.637158245458579, 1.0, -0.08081289659681912]   ### fake code to get a steady state underactuated state (angle)
-            if self.config_space.check_collision_c(x_new, c):
-                continue## path between new_goal and goal is not None
-            if self.path_exist(goal, x_new):
-                return x_new
-        print("failed to find new_goal outside of C reigion")
-        return None
+            sample = [x, y, 0, 0]
+            new_distance = np.sqrt((sample[0] - goal[0]) ** 2 + (sample[1] - goal[1]) ** 2)
+            # print('random sample near goal', sample)
+            # print('updated radius', radius)
+            sample_type = 0 ### so this goal need to be check with check_collision_c
+        else:   ## need to change the sampling area so only sample within C reigion
+            sample = [1.5*np.random.uniform(0, 1)+5, 0.5*np.random.uniform(0, 1)+5.5, 0, 0]  ## just randomly sample within C reigion TODO
+            sample_type = 1
+            print('sample generated randomly',sample)
+        return sample, sample_type
 
     def iterate_new_final_goal(self, goal):
         ### this function take the given goal from the main function,
@@ -98,9 +126,13 @@ class RRTPlanner(object):
         print('y of goal_ac', final_new_goal[1] )
 
         return final_new_goal
-    def get_alpha(self, c):    ### to do
-        alpha = 0.1
-        return alpha
+    def get_alpha(self, goal):    ### to do
+        height = goal[1] - 5.0
+        alpha = np.arccos(height/1.0)
+        a = np.array([goal[0], goal[1], alpha, 0])
+        b = np.array([goal[0], goal[1], -alpha, 0])
+
+        return a, b
 
     def plan_to_pose(self, start, goal, dt=0.01, prefix_time_length=1):
         """
@@ -110,100 +142,132 @@ class RRTPlanner(object):
         print("======= Planning with RRT =======")
 
         EE_goal = goal + np.array([0.2, -0.1, 0, 0])
-        self.graph = RRTGraph(start)
-        self.plan = None
         c_region = self.config_space.find_C_reigion(l=1.0)  ## assume length of gripper is 1.0
         print("c_region", c_region)
-        if self.config_space.check_collision_c(goal, c_region):   ### check if the goal is within C region
-            global new_goal
-            global goal_orien
-            goal_orien = goal[2]
-            Tsimu_start = time.time()
-            for i in range(100):
-                new_goal = self.iterate_new_goal(goal, c_region)
-                new_goal= np.array([6.471056748798914, 6.535613437266156, 0.0, 0.21362598277847444])
+        # if self.config_space.check_collision_c(goal, c_region):   ### check if the goal is within C region
+        global new_goal
+        global new_goal_p
+        global goal_orien
+        goal_orien = goal[2]
+        Tsimu_start = time.time()
+        goal_a = np.array([6.6, 5.6, 1.06369782, 0])
+        self.graph = RRTGraph(goal_a)   ### very important change, in normal rrt, it is self.graph = RRTGraph(start),
+        ## so the start position is added to nodes. Here we add goal nodes
+        self.plan = None
 
-                goal_a  = self.iterate_new_final_goal(np.array([6.5, 5.2, 1.3694384, 0]))  ## actuated goal
-                goal_a = np.array([5.6, 5.6, 0, 0])
-                print("final new goal", goal_a)
-                path_final = self.config_space.local_plan(new_goal, goal_a)
-                # print('path final ', path_final.positions[:, :3])
-                T1_start = time.time()
-                end_pos = simu.simulation_try(path_final.positions[:, :3],0)
-                T1_end = time.time()
-                T1 = T1_end - T1_start
-                print(
-                      'time consumption on simulaiton T1 ===', T1)
-                if np.allclose(end_pos[:2], goal[:2], rtol=0.05, atol=0.05):
-                    print('end_pos', end_pos[:2], 'goal', goal[:2])
-                    print('if simulation result is close enough to desired', np.allclose(end_pos[:2], goal[:2], rtol=0.05, atol=0.05))
+        for i in range(50):
+            new_goal, sample_type = self.iterate_new_goal(goal)
+            new_goal_p = np.array([5.2, 6.2, 0, 0])
+            ax = plt.subplot(1, 1, 1)
+
+            # if sample_type == 0 and self.config_space.check_collision_c(new_goal, c_region):
+            #     continue
+            if sample_type == 0 :
+                print("sample for pseudo goal")
+
+                new_goal_p = np.array([5.2, 6.2, 0, 0])
+                closest_config_p = self.config_space.nearest_config_to(self.graph.nodes, new_goal_p)
+                end_pos_closest = [closest_config_p[0]+1.0*np.sin(closest_config_p[2]), closest_config_p[1]-1.0*np.cos(closest_config_p[2])]
+                print('closes config to pseudo goal', closest_config_p)
+                path_p = self.config_space.local_plan(new_goal_p, closest_config_p)
+                end_pos_p, x_y = simu.simulation_try(path_p.positions[:, :3], 0.5)
+                if np.allclose(end_pos_p[:2], end_pos_closest, rtol=0.05, atol=0.05):
+                    print('end_pos', end_pos_p[:2], 'local goal', end_pos_closest[:2])
+                    print('if simulation result is close enough to desired',
+                          np.allclose(end_pos_p[:2], closest_config_p[:2], rtol=0.05, atol=0.05))
                     print('iteration number of new goal', i)
-                    break
-            print('input path', path_final.positions[:, :3])
-            Tsimu_end = time.time()
-            Tsimu = Tsimu_end - Tsimu_start
-            print(
-                'time consumption on simulaiton total Tsimu ===', Tsimu)
-            print("new goal", new_goal)
+                    self.graph.add_node(new_goal_p, closest_config_p, path_p)
+                    self.plan = self.graph.construct_path_to(new_goal_p)
+                    print('path to pseudo goal from actual goal found, iteration finish')
+                    print('final plan', self.plan)
+                    end_pos_p_2, x_y_2 = simu.simulation_try(self.plan[:, :2], 0.5)
+                    # print
+                    print('forward simulation', end_pos_p_2, x_y_2 )
 
-            print("Iteration:", 0)  ### yes the goal is within C region
-            for it in tqdm(range(self.max_iter)):
-
-                rand_config = self.config_space.sample_config(new_goal)   #generate random point
-                # using goal zoom/bias, this is from class Bicycle
-                if self.config_space.check_collision_c(rand_config, c_region):  # check collision for respawn point
-                    continue #if true, 'continue' will go to the next loop of the for loop
-                closest_config = self.config_space.nearest_config_to(self.graph.nodes, rand_config) #found the nearest point from the graph.nodes
-                path = self.config_space.local_plan(closest_config, rand_config)  # use local planer to generate path
-
-                if self.config_space.check_path_collision(path): #check the path collision
-                    continue
-                delta_path = path.get_prefix(prefix_time_length) #get the new path under step length setting
-                new_config = delta_path.end_position() #set the last point of that path above as the last point
-                self.graph.add_node(new_config, closest_config, delta_path) #add point to the tree
-
-                if self.config_space.distance(new_config, new_goal) <= self.expand_dist: # check if it reach to goal
-                    path_to_goal = self.config_space.local_plan(new_config, new_goal)
-                    if self.config_space.check_path_collision(path_to_goal):
-                        continue
-                    print('graph-1', len(self.graph.nodes), self.graph.nodes)
-                    self.graph.add_node(new_goal, new_config, path_to_goal)
-                    path_final = self.config_space.local_plan(new_goal, goal_a)    #### REPLACE this local_plan with a new local_plan
-                    if self.config_space.check_path_collision(path_final):
-                        continue
-                    self.graph.add_node(goal_a, new_goal, path_final)
-                    self.plan = self.graph.construct_path_to(goal_a)
-                    print('graph', self.graph.nodes)
-                    print('plan of the iteration', self.plan.positions)
-                    # simu.simulation_try(self.plan.positions[:, :2])
+                    # print('final plan positions', self.plan.positions)
                     return self.plan
-        else:
-            for it in tqdm(range(self.max_iter)):
-                rand_config = self.config_space.sample_config(goal)  # generate random point
-                # using goal zoom/bias, this is from class Bicycle
-                if self.config_space.check_collision(rand_config):  # check collision for respawn point
-                    continue  # if true, 'continue' will go to the next loop of the for loop
-                closest_config = self.config_space.nearest_config_to(self.graph.nodes,
-                                                                     rand_config)  # found the nearest point from the graph.nodes
-                path = self.config_space.local_plan(closest_config, rand_config)  # use local planer to generate path
-                if self.config_space.check_path_collision(path):  # check the path collision
-                    continue
-                delta_path = path.get_prefix(prefix_time_length)  # get the new path under step length setting
-                new_config = delta_path.end_position()  # set the last point of that path above as the last point
-                self.graph.add_node(new_config, closest_config, delta_path)  # add point to the tree
+                    # break
+            # if sample_type == 1 and self.config_space.check_collision(new_goal):
+            #     continue
+            if sample_type == 1:
+                sample_1, sample_2 = self.get_alpha(new_goal)
+                print('pseudo goal contacted', sample_1, sample_2)
+                # new_goal= np.array([6.471056748798914, 6.535613437266156, 0.0, 0.21362598277847444])
+                # goal_a  = self.iterate_new_final_goal(np.array([7.5, 5.1, 1.3694384, 0]))  ## actuated goal
+                print("final new goal", goal_a)
+                print(sample_1, goal_a)
+                closest_config_1 = self.config_space.nearest_config_to(self.graph.nodes, sample_1) #found the nearest point from the graph.nodes
+                closest_config_2 = self.config_space.nearest_config_to(self.graph.nodes, sample_2)
+                print('closes config to sample_1', closest_config_1)
+                print('closes config to sample_2', closest_config_2)
+                path_final_1 = self.config_space.local_plan(sample_1, closest_config_1)
+                path_final_2 = self.config_space.local_plan(sample_2, closest_config_2)
+                # path_final_1 = path_final_1.get_prefix(prefix_time_length)
+                # path_final_2 = path_final_2.get_prefix(prefix_time_length)
+                if closest_config_1[2]*sample_1[2] > 0:
+                    end_pos_1, x_y = simu.simulation_try(path_final_1.positions[:, :3],sample_1[2])
+                    end_pos_closest_1 = [closest_config_1[0] + 1.0 * np.sin(closest_config_1[2]),
+                                       closest_config_1[1] - 1.0 * np.cos(closest_config_1[2])]
 
-                if self.config_space.distance(new_config, goal) <= self.expand_dist:  # check if it reach to goal
-                    path_to_goal = self.config_space.local_plan(new_config, goal)
-                    if self.config_space.check_path_collision(path_to_goal):
-                        continue
-                    print('graph-1', len(self.graph.nodes), self.graph.nodes)
-                    self.graph.add_node(goal, new_config, path_to_goal)
-                    self.plan = self.graph.construct_path_to(goal)
-                    print('graph', self.graph.nodes)
-                    print('plan of the iteration', self.plan.positions)
-                    return self.plan
+                    if np.allclose(end_pos_1[:2], end_pos_closest_1, rtol=0.02, atol=0.02):
+                        print('end_pos', end_pos_1[:2], 'local goal', closest_config_2[:2])
+                        print('if simulation result is close enough to desired',
+                              np.allclose(end_pos_1[:2], goal[:2], rtol=0.02, atol=0.02))
+                        print('iteration number of new goal', i)
+                        ax.plot([end_pos_1[0], x_y[0]], [end_pos_1[1], x_y[1]], color='blue', linewidth='3', alpha=0.5)
+                        self.graph.add_node(sample_1, goal_a, path_final_1)
+                if closest_config_2[2] * sample_2[2] > 0:
+                    end_pos_2, x_y = simu.simulation_try(path_final_2.positions[:, :3],sample_2[2])
+                    end_pos_closest_2 = [closest_config_2[0] + 1.0 * np.sin(closest_config_2[2]),
+                                     closest_config_2[1] - 1.0 * np.cos(closest_config_2[2])]
+                    if np.allclose(end_pos_2[:2], closest_config_2[:2], rtol=0.02, atol=0.02):
+                        print('end_pos', end_pos_1[:2], 'local goal', closest_config_2[:2])
+                        print('if simulation result is close enough to desired',
+                              np.allclose(end_pos_2[:2], end_pos_closest_2, rtol=0.02, atol=0.02))
+                        print('iteration number of new goal', i)
+                        ax.plot([end_pos_2[0], x_y[0]], [end_pos_2[1], x_y[1]], color='blue', linewidth='3', alpha=0.5)
+
+                        self.graph.add_node(sample_2, goal_a, path_final_2)
+                        ### TODO TODO TODO TODO
+
+
+
+            print('nodes', self.graph.nodes)
         print("Failed to find plan in allotted number of iterations.")
         return None
+        # self.graph = RRTGraph(start)
+        # for it in tqdm(range(self.max_iter)):
+        #
+        #     rand_config = self.config_space.sample_config(new_goal)   #generate random point
+        #     # using goal zoom/bias, this is from class Bicycle
+        #     if self.config_space.check_collision_c(rand_config, c_region):  # check collision for respawn point
+        #         continue #if true, 'continue' will go to the next loop of the for loop
+        #     closest_config = self.config_space.nearest_config_to(self.graph.nodes, rand_config) #found the nearest point from the graph.nodes
+        #     path = self.config_space.local_plan(closest_config, rand_config)  # use local planer to generate path
+        #
+        #     if self.config_space.check_path_collision(path): #check the path collision
+        #         continue
+        #     delta_path = path.get_prefix(prefix_time_length) #get the new path under step length setting
+        #     new_config = delta_path.end_position() #set the last point of that path above as the last point
+        #     self.graph.add_node(new_config, closest_config, delta_path) #add point to the tree
+        #
+        #     if self.config_space.distance(new_config, new_goal) <= self.expand_dist: # check if it reach to goal
+        #         path_to_goal = self.config_space.local_plan(new_config, new_goal)
+        #         if self.config_space.check_path_collision(path_to_goal):
+        #             continue
+        #         print('graph-1', len(self.graph.nodes), self.graph.nodes)
+        #         self.graph.add_node(new_goal, new_config, path_to_goal)
+        #         path_final = self.config_space.local_plan(new_goal, goal_a)    #### REPLACE this local_plan with a new local_plan
+        #         if self.config_space.check_path_collision(path_final):
+        #             continue
+        #         self.graph.add_node(goal_a, new_goal, path_final)
+        #         self.plan = self.graph.construct_path_to(goal_a)
+        #         print('graph', self.graph.nodes)
+        #         print('plan of the iteration', self.plan.positions)
+        #         # simu.simulation_try(self.plan.positions[:, :2])
+        #         return self.plan
+        # print("Failed to find plan in allotted number of iterations.")
+        # return None
 
     # def obstacle_area(self,obstacle_point1,obstacle_point2,obstacle_point3,obstacle_point4):
     #     self.obstacle_point1 = obstacle_point1
@@ -240,14 +304,15 @@ class RRTPlanner(object):
             [self.config_space.obstacles[0][1], self.config_space.obstacles[1][1],
              self.config_space.obstacles[3][1],
              self.config_space.obstacles[2][1], self.config_space.obstacles[0][1]], color='r')  # 画处障碍物区域
-
+        plt.plot([7.5,7.5,8.5,8.5,7.5],[5,6,6,5,5], color='r')
+        plt.plot([6.5,6.5,7.5,7.5,6.5],[6,7,7,6,6], color='r')
         for path in self.graph.get_edge_paths():
             xs = path.positions[:, 0]
             ys = path.positions[:, 1]
             ax.plot(xs, ys, color='orange')
 
-        new_x = new_goal[0]
-        new_y = new_goal[1]
+        new_x = new_goal_p[0]
+        new_y = new_goal_p[1]
         ee_x = new_x + np.sin(new_goal[2]) * 1.0
         ee_y = new_y - np.cos(new_goal[2]) * 1.0
         # ax.plot(ee_x, ee_y, color='blue', marker='o', markersize=3)
@@ -256,21 +321,23 @@ class RRTPlanner(object):
         # goal_pos_x = self.plan.positions[-1][0] + np.sin(goal_orien) * 1.0
         # goal_pos_y = self.plan.positions[-1][1] - np.cos(goal_orien) * 1.0
         ax.plot(new_x, new_y, color='yellow', marker='o',markersize=5)
-        ax.plot(6.5, 5.1, color='blue', marker='^', markersize=5)
+        ax.plot(7.5, 5.1, color='blue', marker='^', markersize=5)
         # gripper_tip = [self.plan.positions[:, 0], self.config_space.gripper_deflection(self.plan.positions[:, 1])]
-        if self.plan:
-            plan_x = self.plan.positions[:, 0]
-            plan_y = self.plan.positions[:, 1]
-            angle = self.plan.positions[:,2]
-            # for i in range(len(plan_x)):
-            #     x_i = plan_x[i]+np.sin(angle[i])*0.2
-            # x_angle = plan_x + np.cos(angle)*0.2
-            # y_angle = plan_y + np.sin(angle) * 0.2
-            print(len(plan_y), "length of the time steps")
-            ax.plot(plan_x, plan_y, color='green')
-            # ax.plot(x_angle, y_angle, color='blue',marker='o',markersize=1)
+        # if self.plan:
+            # plan_x = self.plan.positions[:, 0]
+            # plan_y = self.plan.positions[:, 1]
+        plan_x = self.plan[:, 0]
+        plan_y = self.plan[:, 1]
+        # angle = self.plan.positions[:,2]
+        # for i in range(len(plan_x)):
+        #     x_i = plan_x[i]+np.sin(angle[i])*0.2
+        # x_angle = plan_x + np.cos(angle)*0.2
+        # y_angle = plan_y + np.sin(angle) * 0.2
+        print(len(plan_y), "length of the time steps")
+        ax.plot(plan_x, plan_y, color='green')
+        # ax.plot(x_angle, y_angle, color='blue',marker='o',markersize=1)
 
-            # ax.plot(plan_x, plan_y, gripper_tip, color='green')
+        # ax.plot(plan_x, plan_y, gripper_tip, color='green')
 
 
         plt.show()
@@ -312,15 +379,10 @@ def sample_fake_goal(state):
     return fake_goal
 
 def main():
-    """Use this function if you'd like to test without ROS.
 
-    If you're testing at home without ROS, you might want
-    to get rid of the rospy.is_shutdown check in the main
-    planner loop (and the corresponding rospy import).
-    """
     T0_start = time.time()
     start = np.array([2, 2, 0, 0])
-    goal = np.array([6.5, 5.1, 1.3694384, 0])
+    goal = np.array([7.5, 5.1, 1.3694384, 0])
 
     xy_low = [0, 0]
     xy_high = [10, 10]
@@ -337,14 +399,14 @@ def main():
                                        0.15)
 
     planner = RRTPlanner(config, max_iter=500, expand_dist=0.2)
-    plan = planner.plan_to_pose(start, goal, prefix_time_length=1.0)
+    plan = planner.plan_to_pose(start, goal, prefix_time_length=1.2)
     # plot_new = self.new_goal
     T2_end = time.time()
     T2= T2_end - T0_start
     print("==t1===", T2)
     planner.plot_execution()
-    print('path len:', len(plan.positions))
-    print('final pose:', plan.positions[-1])
+    # print('path len:', len(plan.positions))
+    # print('final pose:', plan.positions[-1])
     # print('final path', Plan.open_loop_inputs())
 
 # def test_runing():

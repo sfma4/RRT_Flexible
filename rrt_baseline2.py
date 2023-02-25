@@ -102,7 +102,7 @@ class RRTPlanner(object):
         alpha = 0.1
         return alpha
 
-    def plan_to_pose(self, start, goal, dt=0.01, prefix_time_length=1):
+    def plan_to_pose(self, start, goal, dt=0.01, prefix_time_length=2.0):
         """
             Uses the RRT algorithm to plan from the start configuration
             to the goal configuration.
@@ -162,40 +162,44 @@ class RRTPlanner(object):
 
                     # path_before = self.config_space.local_plan(start, new_config)
                     path_pos = path_before.positions   ### path information of the tree excluding the last one
-                    print('path_pos shape', path_pos.shape)
-                    ax = plt.subplot(1, 1, 1)
-                    ax.set_aspect(1)
-                    ax.set_xlim(self.config_space.low_lims[0], self.config_space.high_lims[0])
-                    ax.set_ylim(self.config_space.low_lims[1], self.config_space.high_lims[1])
-                    plt.plot(path_pos[:,0], path_pos[:,1])
-                    plt.show()
-                    velo = []
-                    dt = 0.1
-                    for i in range(path_pos.shape[0]):
-                        if i < 1:
-                            velo_x, velo_y = 0, 0
-                            velo.append([velo_x,velo_y])
-                        else:
-                            velo_x = (path_pos[i][0] - path_pos[i-1][0])/dt
-                            velo_y = (path_pos[i][1] - path_pos[i-1][1]) / dt
-                            velo.append([velo_x, velo_y])
-                    print('velo', len(velo), velo)
-                    acc = []
-                    velo = np.array(velo)
-                    print('velo', velo.shape)
-                    for i in range(velo.shape[0]):
-                        if i < 1:
-                            acc_x, acc_y = 0, 0
-                            acc.append([acc_x,acc_y])
-                        else:
-                            acc_x = (velo[i][0]-velo[i-1][0])/dt ### dt = 0.1 from configuration space
-                            acc_y = (velo[i][1] - velo[i - 1][1]) / dt
-                            acc.append([acc_x, acc_y])
-                    print('acc', acc)
-                    acc = np.array(acc)
-                    alpha_acc = find_angular_acc(acc[0,:], acc[1,:], 0)
-                    print("alpha_acc", alpha_acc)
-                    alpha = find_angular_displacement(alpha_acc, dt)
+                    # print('path_pos shape', path_pos.shape)
+                    # ax = plt.subplot(1, 1, 1)
+                    # ax.set_aspect(1)
+                    # ax.set_xlim(self.config_space.low_lims[0], self.config_space.high_lims[0])
+                    # ax.set_ylim(self.config_space.low_lims[1], self.config_space.high_lims[1])
+                    # plt.plot(path_pos[:,0], path_pos[:,1])
+                    # plt.show()
+                    # velo = []
+
+
+                    # dt = 0.1
+                    # for i in range(path_pos.shape[0]):
+                    #     if i < 1:
+                    #         velo_x, velo_y = 0, 0
+                    #         velo.append([velo_x,velo_y])
+                    #     else:
+                    #         velo_x = (path_pos[i][0] - path_pos[i-1][0])/dt
+                    #         velo_y = (path_pos[i][1] - path_pos[i-1][1]) / dt
+                    #         velo.append([velo_x, velo_y])
+                    # print('velo', len(velo), velo)
+                    # acc = []
+                    # velo = np.array(velo)
+                    # print('velo', velo.shape)
+                    # for i in range(velo.shape[0]):
+                    #     if i < 1:
+                    #         acc_x, acc_y = 0, 0
+                    #         acc.append([acc_x,acc_y])
+                    #     else:
+                    #         acc_x = (velo[i][0]-velo[i-1][0])/dt ### dt = 0.1 from configuration space
+                    #         acc_y = (velo[i][1] - velo[i - 1][1]) / dt
+                    #         acc.append([acc_x, acc_y])
+                    # print('acc', acc)
+                    # acc = np.array(acc)
+                    # alpha_acc = find_angular_acc(acc[0,:], acc[1,:], 0)
+                    # print("alpha_acc", alpha_acc)
+                    # alpha = find_angular_displacement(alpha_acc, dt)
+
+
                     alpha = random_angular_displacement()
                     print("underactuated join state before enter c reigion", alpha)
                     self.graph.add_node(goal_a, new_config, path_to_goal)

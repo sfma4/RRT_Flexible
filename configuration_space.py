@@ -29,8 +29,6 @@ class Plan(object):
         self.open_loop_inputs = open_loop_inputs
 
     def __iter__(self):
-        # I have to do this in an ugly way because python2 sucks and
-        # I hate it.
         for t, p, c in zip(self.times, self.positions, self.open_loop_inputs):
             yield t, p, c
 
@@ -77,12 +75,18 @@ class Plan(object):
             elif not path2:
                 return path1
             assert path1.dt == path2.dt, "Cannot append paths with different time deltas."
-            assert np.allclose(path1.end_position(),
-                               path2.start_position()), "Cannot append paths with inconsistent start and end positions."
+            # print('end position', path1.end_position(),
+            #                    path2.start_position())
+            # if np.allclose(path1.end_position(),
+            #                    path2.start_position(), rtol=5e-02) is False:
+            #     print('check path1 and path2 to debug', path1.end_position(), path2.start_position())
+            # assert np.allclose(path1.end_position(),
+            #                    path2.start_position(), rtol=1e-01), "Cannot append paths with inconsistent start and end positions."
             times = np.concatenate((path1.times, path1.times[-1] + path2.times[1:]), axis=0)
             positions = np.concatenate((path1.positions, path2.positions[1:]), axis=0)
             open_loop_inputs = np.concatenate((path1.open_loop_inputs, path2.open_loop_inputs[1:]), axis=0)
             dt = path1.dt
+            # print('positions in chain_two_path', positions)
             return Plan(times, positions, open_loop_inputs, dt=dt)
 
         chained_path = None
@@ -285,12 +289,12 @@ class FlexibleLocalPlanner(ConfigurationSpace):
         y1 = c1[1]
         x2 = c2[0]
         y2 = c2[1]
-        # sin_theta1 = np.sin(c1[2])
-        # cos_theta1 = np.cos(c1[2])
-        # sin_theta2 = np.sin(c2[2])
-        # cos_theta2 = np.cos(c2[2])
+        sin_theta1 = np.sin(c1[2])
+        cos_theta1 = np.cos(c1[2])
+        sin_theta2 = np.sin(c2[2])
+        cos_theta2 = np.cos(c2[2])
 
-        return (x1 - x2) ** 2 + (y1 - y2) ** 2
+        return (x1 - x2) ** 2 + (y1 - y2) ** 2 + 0.6 * ((sin_theta1 - sin_theta2) ** 2 + (cos_theta1 - cos_theta2) ** 2)
 
     def sample_config(self, goal):
         """
@@ -315,7 +319,7 @@ class FlexibleLocalPlanner(ConfigurationSpace):
         # return sample
 
 
-        probability_of_sampling_goal = 0.2
+        probability_of_sampling_goal = 0.1
         p = np.random.uniform(0, 1)
         scale = np.random.rand(1, 4)[0]
         if self.zoom_radius is None:
@@ -333,8 +337,8 @@ class FlexibleLocalPlanner(ConfigurationSpace):
             new_distance = np.sqrt((sample[0] - goal[0]) ** 2 + (sample[1] - goal[1]) ** 2)
             if new_distance < self.zoom_radius:
                 self.zoom_radius = new_distance
-            print('random sample near goal', sample)
-            print('updated radius', radius)
+            # print('random sample near goal', sample)
+            # print('updated radius', radius)
         else:
             sample = np.multiply(self.high_lims - self.low_lims, scale) + self.low_lims
         return sample
@@ -348,17 +352,31 @@ class FlexibleLocalPlanner(ConfigurationSpace):
         """
         x = c[0]
         y = c[1]
-        # since we are only dealing with one obstacle, the code will be simplified
-        point_1 = self.obstacles[0]  #left bottom
-        point_2 = self.obstacles[1]  #left top
-        point_3 = self.obstacles[2]  #right bottom
-        point_4 = self.obstacles[3]  #right top
-        if (x >= point_1[0]) \
-            and (x <= point_3[0]) \
-            and (y >= point_1[1]) \
-            and (y <= point_2[1]):
-            return True
+        for obj in self.obstacles:
+            # change the collsion method to previous method (x,y, length, width) so that multiple obstacles can be used
+            point_1 = self.obstacles[0]  #left bottom
+            point_2 = self.obstacles[1]  #left top
+            point_3 = self.obstacles[2]  #right bottom
+            point_4 = self.obstacles[3]  #right top
+            if (x >= point_1[0]) \
+                and (x <= point_3[0]) \
+                and (y >= point_1[1]) \
+                and (y <= point_2[1]):
+                return True
         return False
+
+    def check_collision_c(self, rand, c):
+        x = rand[0]
+        y = rand[1]
+        point_1 = c[0]  # left bottom
+        point_2 = c[1]  # left top
+        point_3 = c[2]  # right bottom
+        point_4 = c[3]  # right top
+        if (x >= point_1[0]) \
+                and (x <= point_3[0]) \
+                and (y >= point_1[1]) \
+                and (y <= point_2[1]):
+            return True
 
     def check_path_collision(self, path):
         """
@@ -390,13 +408,13 @@ class FlexibleLocalPlanner(ConfigurationSpace):
                                    or np.any(np.array(position) > np.array(self.high_lims)))
 
                 if collide or inval_state:
-                    return True
-                    # if self.flexibility_check(c1, c2):
-                    #     print("flexibility pass")
-                    #     return False
-                    # else:
-                    #     print('path collision')
-                    #     return True
+                    # return True
+                    if self.flexibility_check(c1):
+                        print("flexibility pass")
+                        return False
+                    else:
+                        # print('path collision')
+                        return True
 
             # inval_input = bool(np.any(np.array(inputs) < np.array(self.input_low_lims))
             #                    or np.any(np.array(inputs) > np.array(self.input_high_lims)))
@@ -415,22 +433,45 @@ class FlexibleLocalPlanner(ConfigurationSpace):
             print("flexibility pass")
             return True
 
+    def gripper_deflection(self, y):
+        l = 0.4  # length of the gripper
+        mass_object = 3  # assume the mass of the grasping object is 3kg
+        p = mass_object * 9.81
+        phi =  p * l**2 / 10 # assume 2EI = 10, calculating the angle of deflection
+        delta = p * l**3 / 15 # assume 2EI = 10, calculating vertical deflection distance
+        tip_pos = y - delta # y is the position of robot on y direction
+        return tip_pos
+    ## this calculate the natural gripper angle by gravity and by previous step and current obstacles
+
+    # def gripper_tip_pos(self, c1):
+    # ## this calculate the end position of the gripper
+
+    def find_C_reigion(self,  l):
+        C_region = [[self.obstacles[0][0] - l, 0],
+                    [self.obstacles[1][0] - l, self.obstacles[1][1] + l],
+                    [self.obstacles[2][0] + l, self.obstacles[2][1] - l],
+                    [self.obstacles[3][0] + l, self.obstacles[3][0] - l
+                     ]]
+        return C_region
+
     def dynamics_model(self, c1): #generate result of the force output
         l = 0.4 # length of the gripper
-        p = abs( 180 * (c1[0] + l - 5))  # friction resulted by the deformation of gripper contacting with the obstacls
-        theta = p * l ** 2 / 10  # assume 2EI = 10
+        mass_object = 3  # assume the mass of the grasping object is 3kg
+        p = abs( 180 * (c1[0] + l - 5))  +3 * 9.81# friction resulted by the deformation of gripper contacting with the obstacles and weight
+        angle_deflection = p * l ** 2 / 10  # assume 2EI = 10
         k = 10  # torsion spring constant
-        load = k * theta # exerted force on robot from the deformation as assumed
-        print(theta, 'theta')
-        return theta,load
+        load = k * angle_deflection # exerted force on robot from the deformation as assumed
+        print(angle_deflection, 'theta')
+        return angle_deflection,load
 
-    def local_plan(self, c1, c2, dt=0.01, consider_theta=False, is_end=False):
+    def local_plan(self, c1, c2, dt=0.1, consider_theta=False, is_end=False):
         v = c2 - c1
         dist = np.linalg.norm(c1 - c2)
         total_time = dist * 1  # assume 10 seconds per meter
         vel = v / total_time
         p = lambda  t: (1 - (t / total_time)) * c1 + (t / total_time) * c2
-        times = np.arange(0, total_time, self.dt)
+        print('total time', total_time)
+        times = np.arange(0, abs(total_time), self.dt)  ### I added abs() to debug
         positions = p(times[:, None])
         velocities = np.tile(vel, (positions.shape[0], 1))
         plan = Plan(times, positions, velocities, dt=self.dt)

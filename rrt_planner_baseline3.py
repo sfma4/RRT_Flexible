@@ -10,7 +10,7 @@ from collections import defaultdict
 from configuration_space import FreeEuclideanSpace, FlexibleLocalPlanner, Plan
 from tqdm import tqdm
 
-
+import simulation_function_2 as simu
 class RRTGraph(object):
 
     def __init__(self, *nodes):
@@ -92,8 +92,13 @@ class RRTPlanner(object):
                 print('graph-1', len(self.graph.nodes), self.graph.nodes)
                 self.graph.add_node(goal, new_config, path_to_goal)
                 self.plan = self.graph.construct_path_to(goal)
+                T1_start = time.time()
+                end_pos = simu.simulation_try(self.plan.positions[:, :3], 0)
+                T1_end = time.time()
+                T1 = T1_end - T1_start
                 print('graph', self.graph.nodes)
                 print('plan of the iteration', self.plan.positions)
+
                 return self.plan
 
         print("Failed to find plan in allotted number of iterations.")
@@ -172,7 +177,7 @@ def main():
     """
     T0_start = time.time()
     start = np.array([2, 2, 0, 0])
-    goal = np.array([6.5, 5.1, 1.3694384, 0])
+    goal = np.array([5.2, 5.6, 0, 0])
 
     xy_low = [0, 0]
     xy_high = [10, 10]
@@ -186,10 +191,10 @@ def main():
                                        [-u1_max, -u2_max],
                                        [u1_max, u2_max],
                                        obstacle_area1,
-                                       0.15)
+                                       0.01)
 
-    planner = RRTPlanner(config, max_iter=500, expand_dist=0.2)
-    plan = planner.plan_to_pose(start, goal, prefix_time_length=1.0)
+    planner = RRTPlanner(config, max_iter=500, expand_dist=0.5)
+    plan = planner.plan_to_pose(start, goal, prefix_time_length=2.0)
     # plot_new = self.new_goal
     T2_end = time.time()
     T2= T2_end - T0_start

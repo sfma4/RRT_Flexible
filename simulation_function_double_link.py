@@ -15,7 +15,7 @@ physicsClient = p.connect(p.GUI)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
 
-def simulation_try(p1, alpha_initial):
+def simulation_try(p1):
     p.resetSimulation()
     p.setRealTimeSimulation(0)
     p.resetDebugVisualizerCamera(cameraDistance=12.5, cameraYaw=24.40, cameraPitch=-28,
@@ -25,7 +25,7 @@ def simulation_try(p1, alpha_initial):
     #                     path + str(timestr) +  ".mp4")
     # print('logid', logid)
     # print('start position', p1[0][0], p1[0][1])
-    boxId = p.loadURDF(path + "TwoLink_4.urdf", basePosition=[0, 0, 0],
+    boxId = p.loadURDF(path + "TwoLink_5.urdf", basePosition=[0, 0, 0],
                        baseOrientation=p.getQuaternionFromEuler([math.pi / 2, math.pi / 2, 0]), useFixedBase=False)
     # boxId = p.loadURDF(path + "short_chain.urdf", basePosition=[0, 0, 0],
     #                    baseOrientation=p.getQuaternionFromEuler([math.pi / 2, math.pi / 2, 0]), useFixedBase=False)
@@ -34,8 +34,8 @@ def simulation_try(p1, alpha_initial):
                        useFixedBase=True, globalScaling=5)
     ob2 = p.loadURDF(path + "cube.urdf", basePosition=[8, 0, 5.5],
                        useFixedBase=True, globalScaling=1)
-    ob3 = p.loadURDF(path + "cube.urdf", basePosition=[7, 0, 6.5],
-                       useFixedBase=True, globalScaling=1)
+    # ob3 = p.loadURDF(path + "cube.urdf", basePosition=[7, 0, 6.5],
+    #                    useFixedBase=True, globalScaling=1)
     # ob4 = p.loadURDF(path + "cube.urdf", basePosition=[6, 0, 6.5],
     #                  useFixedBase=True, globalScaling=1)
     redSlider = p.addUserDebugParameter("red", 0, 1, 1)
@@ -47,7 +47,7 @@ def simulation_try(p1, alpha_initial):
     blue = p.readUserDebugParameter(blueSlider)
     alpha = p.readUserDebugParameter(alphaSlider)
     p.changeVisualShape(ob2, -1, rgbaColor=[red, green, blue, alpha])
-    p.changeVisualShape(ob3, -1, rgbaColor=[red, green, blue, alpha])
+    # p.changeVisualShape(ob3, -1, rgbaColor=[red, green, blue, alpha])
     # p.setRealTimeSimulation(1)
     ### dynamics and property section, like friction etc
     # print('dynamics', p.getDynamicsInfo(boxId, 4))
@@ -55,18 +55,28 @@ def simulation_try(p1, alpha_initial):
     # print('dynamics', p.getDynamicsInfo(boxId, 4))
     p.changeDynamics(boxId, 3, linearDamping=1.0, angularDamping=1.0)
     p.changeDynamics(boxId, 4, lateralFriction=0.25)
+    p.changeDynamics(boxId, 6, lateralFriction=0.18)
 
     # print('underactuated joint dynamics', p.getJointInfo(boxId,3))
     target_v = 5.0  # motor angular speed rad/s and linear speed @@@@@@ how come this value change the position result?
     # target_v = [target_v, target_v]
     max_force = 800  # max force exerted by motor
     x_plot, y_plot = [], []
+    theta1_plot, theta2_plot = [], []
     force = []
     joint1_pos = []
     p.resetJointState(boxId, 0, p1[0][0])
     p.resetJointState(boxId, 2, p1[0][1])
     # p.resetJointState(boxId, 3, p1[0][2])
-    p.resetJointState(boxId, 3, alpha_initial)
+    if len(p1[0]) > 3:
+        p.resetJointState(boxId, 3, p1[0][2])
+        p.resetJointState(boxId, 5, p1[0][3])
+    else:
+        p.resetJointState(boxId, 3, 0.0)
+        p.resetJointState(boxId, 5, 0.0)
+        # p.resetJointState(boxId, 5, 0.1)
+
+
     # p.setTimeStep(0.05)   ### seems like changing this will heavily affect the fidelity
     time.sleep(0.2)
     for i in range(len(p1)):
@@ -90,12 +100,34 @@ def simulation_try(p1, alpha_initial):
             target_v,
             max_force
         )
-        p.setJointMotorControl2(
-            boxId,
-            3,
-            p.POSITION_CONTROL,
-            targetPosition=0.2, targetVelocity=0,
-            positionGain=0.1, velocityGain=0.5, force=5)
+        if len(p1[0]) > 3:
+            p.setJointMotorControl2(
+                boxId,
+                3,
+                p.POSITION_CONTROL,
+                targetPosition=p1[0][2], targetVelocity=0,
+                positionGain=0.1, velocityGain=0.9, force=20)
+            p.setJointMotorControl2(
+                boxId,
+                5,
+                p.POSITION_CONTROL,
+                targetPosition=p1[0][3], targetVelocity=0,
+                # positionGain=0.1, velocityGain=0.9, force=10)
+                positionGain=0.4, velocityGain=0.5, force=20)
+        else:
+            p.setJointMotorControl2(
+                boxId,
+                3,
+                p.POSITION_CONTROL,
+                targetPosition=0.2, targetVelocity=0,
+                positionGain=0.1, velocityGain=0.9, force=20)
+            p.setJointMotorControl2(
+                boxId,
+                5,
+                p.POSITION_CONTROL,
+                targetPosition=0.1, targetVelocity=0,
+                positionGain=0.4, velocityGain=0.5, force=20)
+
         # p.setJointMotorControl2(
         #     boxId,
         #     3,
@@ -151,11 +183,14 @@ def simulation_try(p1, alpha_initial):
         x = p.getJointState(boxId, 0)[0]
         y = p.getJointState(boxId, 2)[0]
         theta = p.getJointState(boxId, 3)[0]
+        theta_2 = p.getJointState(boxId, 5)[0]
         f_1 = p.getJointState(boxId, 4)[2]
         # print('join force', f_1)
         f = p.getJointState(boxId, 4)[0]
         x_plot.append(x)
         y_plot.append(y)
+        theta1_plot.append(theta)
+        theta2_plot.append(theta_2)
         force.append(f)
         joint1_pos.append(f_1)
         # if abs(x - p1[-1][0]) < 0.1 and abs(y - p1[-1][1]) < 0.1:
@@ -193,7 +228,8 @@ def simulation_try(p1, alpha_initial):
     # print('pause to let gravity take effect')
 
         ### this section code make sure the recorded value gets updated for the bounce
-    end_pos = [x_plot[-1] + np.sin(theta), y_plot[-1] - np.cos(theta)]
+    end_pos = [x_plot[-1] + 0.5*np.sin(theta) + 0.5*np.sin(theta_2), y_plot[-1] - 0.5* np.cos(theta) - 0.5*np.cos(theta_2)]
+    end_pos = [p.getLinkState(boxId,6)[0][0], p.getLinkState(boxId,6)[0][2]]
     # p.stopStateLogging(logid)
 
     # print("theta angle at last", theta)
@@ -214,11 +250,14 @@ def simulation_try(p1, alpha_initial):
         [0, 5,
          5,
          0, 0], color='r')  # 画处障碍物区域
-    # ax.plot(x_plot, y_plot, color='purple', marker='v', markersize=2)
+    if len(p1[0]) < 3:
+        ax.plot(x_plot, y_plot, color='purple', marker='v', markersize=2)
+    else:
+        pass
     # x_tip = x + np.sin(p.getJointState(boxId, 3)[0]) * 1.0
     # y_tip = y - np.cos(p.getJointState(boxId, 3)[0]) * 1.0
     # ax.plot([end_pos[0],end_pos[1]], [x,y],color='blue', linewidth='3',alpha=0.5)
     # ax.plot(end_pos[0], end_pos[1], color='black', marker='o', markersize=3,alpha=0.5)
     # plt.show()
 
-    return end_pos, [x,y]
+    return end_pos, [x_plot,y_plot], [theta, theta_2]  ## thetas represent the final state of the underactuated joints

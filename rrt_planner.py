@@ -78,18 +78,24 @@ class RRTPlanner(object):
                 continue #if true, 'continue' will go to the next loop of the for loop
             closest_config = self.config_space.nearest_config_to(self.graph.nodes, rand_config) #found the nearest point from the graph.nodes
             path = self.config_space.local_plan(closest_config, rand_config)  # use local planer to generate path
+            print('closest_config',closest_config, 'random', rand_config)
             if self.config_space.check_path_collision(path): #check the path collision
                 continue
             delta_path = path.get_prefix(prefix_time_length) #get the new path under step length setting
             new_config = delta_path.end_position() #set the last point of that path above as the last point
             self.graph.add_node(new_config, closest_config, delta_path) #add point to the tree
+
             if self.config_space.distance(new_config, goal) <= self.expand_dist: # check if it reach to goal
                 path_to_goal = self.config_space.local_plan(new_config, goal)
                 if self.config_space.check_path_collision(path_to_goal):
                     continue
+                print('graph-1', len(self.graph.nodes), self.graph.nodes)
                 self.graph.add_node(goal, new_config, path_to_goal)
                 self.plan = self.graph.construct_path_to(goal)
+                print('graph', self.graph.nodes)
+                print('plan of the iteration', self.plan.positions)
                 return self.plan
+
         print("Failed to find plan in allotted number of iterations.")
         return None
 
@@ -133,12 +139,15 @@ class RRTPlanner(object):
             xs = path.positions[:, 0]
             ys = path.positions[:, 1]
             ax.plot(xs, ys, color='orange')
-
+        # gripper_tip = [self.plan.positions[:, 0], self.config_space.gripper_deflection(self.plan.positions[:, 1])]
         if self.plan:
             plan_x = self.plan.positions[:, 0]
             plan_y = self.plan.positions[:, 1]
             print(len(plan_y), "length of the time steps")
             ax.plot(plan_x, plan_y, color='green')
+
+            # ax.plot(plan_x, plan_y, gripper_tip, color='green')
+
 
         plt.show()
 
@@ -161,27 +170,30 @@ def main():
     to get rid of the rospy.is_shutdown check in the main
     planner loop (and the corresponding rospy import).
     """
-    start = np.array([4.8, 3.5, 0, 0])
-    goal = np.array([4.8, 5.5, 0, 0])
+    T0_start = time.time()
+    start = np.array([2, 2, 0, 0])
+    goal = np.array([6.5, 5.1, 1.3694384, 0])
+
     xy_low = [0, 0]
     xy_high = [10, 10]
     phi_max = 0.6
     u1_max = 2
     u2_max = 3
     obstacles = []
-    obstacle_area1 = [[5, 4], [5, 5], [10, 4], [10, 5]]   ### rectangles 1 left-bottom 2 left-up 3 right bottom 4 right-up
-    # obstacles = [[6, 3.5, 1.5], [3.5, 6.5, 1]]  #,[1, 8, 1],[8, 1, 1]
-    # obstacles = [[2, 8, 1],[2, 5, 1],[5, 5, 1], [8, 5, 1],[8, 2, 1]]
-    config = FlexibleLocalPlanner(xy_low + [-2*np.pi, -phi_max],
-                                       xy_high + [2*np.pi, phi_max],
+    obstacle_area1 = [[5, 0], [5, 5], [10, 0], [10, 5]]   ### rectangles 1 left-bottom 2 left-up 3 right bottom 4 right-up
+    config = FlexibleLocalPlanner(xy_low + [-1*np.pi, -phi_max],
+                                       xy_high + [1*np.pi, phi_max],
                                        [-u1_max, -u2_max],
                                        [u1_max, u2_max],
                                        obstacle_area1,
                                        0.15)
 
     planner = RRTPlanner(config, max_iter=500, expand_dist=0.2)
-    plan = planner.plan_to_pose(start, goal, prefix_time_length=1)
-
+    plan = planner.plan_to_pose(start, goal, prefix_time_length=1.0)
+    # plot_new = self.new_goal
+    T2_end = time.time()
+    T2= T2_end - T0_start
+    print("==t1===", T2)
     planner.plot_execution()
     print('path len:', len(plan.positions))
     print('final pose:', plan.positions[-1])

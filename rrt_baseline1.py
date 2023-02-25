@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 from configuration_space import FreeEuclideanSpace, FlexibleLocalPlanner, Plan
 from tqdm import tqdm
-import simulation_function as simu
+import simulation_function_2 as simu
 
 class RRTGraph(object):
 
@@ -134,6 +134,8 @@ class RRTPlanner(object):
             # print("new goal", new_goal)
 
             print("Iteration:", 0)  ### yes the goal is within C region
+            goal_a = np.array([5.6, 5.6, 0, 0])
+
             for it in tqdm(range(self.max_iter)):
 
                 rand_config = self.config_space.sample_config(goal_a)   #since it is the base line, there is no fake goal, so we just sample towards the goal
@@ -150,6 +152,7 @@ class RRTPlanner(object):
                 self.graph.add_node(new_config, closest_config, delta_path) #add point to the tree
 
                 if self.config_space.distance(new_config, goal_a) <= self.expand_dist: # check if it reach to goal
+                    goal_a = np.array([5.6, 5.6, 0, 0])
 
                     path_to_goal = self.config_space.local_plan(new_config, goal_a)
                     if self.config_space.check_path_collision(path_to_goal):
@@ -158,10 +161,10 @@ class RRTPlanner(object):
                     print('graph-1', len(self.graph.nodes), self.graph.nodes)
 
                     # self.graph.add_node(goal_a, new_config, path_final)
-                    path_before = self.graph.construct_path_to(new_config)
+                    # path_before = self.graph.construct_path_to(new_config)
 
                     # path_before = self.config_space.local_plan(start, new_config)
-                    path_pos = path_before.positions   ### path information of the tree excluding the last one
+                    # path_pos = path_before.positions   ### path information of the tree excluding the last one
                     # print('path_pos shape', path_pos.shape)
                     # ax = plt.subplot(1, 1, 1)
                     # ax.set_aspect(1)
@@ -200,27 +203,32 @@ class RRTPlanner(object):
                     # alpha = find_angular_displacement(alpha_acc, dt)
 
 
-                    alpha = random_angular_displacement()
+                    # alpha = random_angular_displacement()
+                    alpha = 0
                     print("underactuated join state before enter c reigion", alpha)
                     self.graph.add_node(goal_a, new_config, path_to_goal)
-                    path_final = self.config_space.local_plan(new_config, goal_a)    #### REPLACE this local_plan with a new local_plan
-                    if self.config_space.check_path_collision(path_final):
-                        continue
+                    path_final = self.graph.construct_path_to(goal_a)   #### REPLACE this local_plan with a new local_plan
+                    # if self.config_space.check_path_collision(path_final):
+                    #     continue
+                    T1_start = time.time()
                     end_pos = simu.simulation_try(path_final.positions[:, :3], alpha)
-                    print('end_pos', end_pos)
+                    T1_end = time.time()
+                    T1 = T1_end - T1_start
+                    print('end_pos', end_pos,
+                          'time consumption on simulaiton T1 ===', T1)
                     ### refactor this section code, the current logic is that, if the desired underactuated state is not acheive,
                     ## then it will return a plan (even not successful)
                     if np.allclose(end_pos[:2], goal[:2], rtol=0.05, atol=0.05):
                         print('end_pos', end_pos[:2], 'goal', goal[:2])
                         print('if simulation result is close enough to desired, successful!',
                               np.allclose(end_pos[:2], goal[:2], rtol=0.05, atol=0.05))
-                        self.graph.add_node(goal_a, new_config, path_final)
+                        self.graph.add_node(goal_a, new_config, path_to_goal)
                         self.plan = self.graph.construct_path_to(goal_a)
                     else:
-                        self.graph.add_node(goal_a, new_config, path_final)
+                        self.graph.add_node(goal_a, new_config, path_to_goal)
                         self.plan = self.graph.construct_path_to(goal_a)
-                        print('graph', self.graph.nodes)
-                        print('did not acheive to the desired underactuated ', self.plan.positions)
+                        # print('graph', self.graph.nodes)
+                        print('did not acheive to the desired underactuated ')
                         break
 
                     return self.plan
@@ -384,10 +392,9 @@ def main():
     to get rid of the rospy.is_shutdown check in the main
     planner loop (and the corresponding rospy import).
     """
-    T1_start = time.time()
+    T0_start = time.time()
     start = np.array([2, 2, 0, 0])
     goal = np.array([6.5, 5.1, 1.3694384, 0])
-
     xy_low = [0, 0]
     xy_high = [10, 10]
     phi_max = 0.6
@@ -402,12 +409,12 @@ def main():
                                        obstacle_area1,
                                        0.15)
 
-    planner = RRTPlanner(config, max_iter=500, expand_dist=0.2)
+    planner = RRTPlanner(config, max_iter=500, expand_dist=0.5)
     plan = planner.plan_to_pose(start, goal, prefix_time_length=1.0)
     # plot_new = self.new_goal
-    T1_end = time.time()
-    T1= T1_end - T1_start
-    print("==t1===", T1)
+    T2_end = time.time()
+    T2= T2_end - T0_start
+    print("==t2===", T2)
     planner.plot_execution()
     print('path len:', len(plan.positions))
     print('final pose:', plan.positions[-1])
