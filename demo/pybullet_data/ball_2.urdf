@@ -1,0 +1,77 @@
+<robot name="lbr_iiwa" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- Import Rviz colors -->
+  <material name="Grey">
+    <color rgba="0.2 0.2 0.2 1.0"/>
+  </material>
+  <material name="Orange">
+    <color rgba="1.0 0.423529411765 0.0392156862745 1.0"/>
+  </material>
+  <material name="Blue">
+    <color rgba="0.5 0.7 1.0 1.0"/>
+  </material>
+  <material name="Red">
+    <color rgba="0.8 0 0 1"/>
+  </material>
+  <link name="link_0">
+  </link>
+  <link name="link_01">
+  </link>
+  <link name="link_02">
+  </link>
+  <link name="link_03">
+  </link>
+  <joint name="joint_01" type="prismatic">
+    <axis xyz="1 0 0"/>
+    <limit effort="0" lower="-1000" upper="1000" velocity="50"/>
+    <dynamics damping="0.0" friction="0.0"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="link_0"/>
+    <child link="link_01"/>
+  </joint>
+  <joint name="joint_02" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <limit effort="0" lower="-1000" upper="1000" velocity="50"/>
+    <dynamics damping="0.0" friction="0.0"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="link_01"/>
+    <child link="link_02"/>
+  </joint>
+  <joint name="joint_03" type="prismatic">
+    <axis xyz="0 0 1"/>
+    <limit effort="0" lower="-1000" upper="1000" velocity="50"/>
+    <dynamics damping="0.0" friction="0.0"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="link_02"/>
+    <child link="link_03"/>
+  </joint>
+  <link name="link_1">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <!--Increase mass from 5 Kg original to provide a stable base to carry the
+          arm.-->
+      <mass value="0.02"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="ball.obj"/>
+      </geometry>
+      <material name="Orange"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="ball.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- joint between link_0 and link_1 -->
+  <joint name="joint_1" type="fixed">
+    <parent link="link_03"/>
+    <child link="link_1"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+</robot>
+
